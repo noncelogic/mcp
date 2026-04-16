@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.noncelogic/mcp",
+  "description": "Hosted Playwright API for AI agents. Returns a11y trees instead of screenshots.",
+  "repository": {
+    "url": "https://github.com/noncelogic/mcp",
+    "source": "github"
+  },
+  "version": "1.1.4",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@roveapi/mcp",
+      "version": "1.1.4",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "Your Rove API key (get one at roveapi.com)",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true,
+          "name": "ROVE_API_KEY"
+        }
+      ]
+    }
+  ]
+}
