@@ -1,0 +1,38 @@
+{
+  "name": "@roveapi/mcp",
+  "version": "1.1.4",
+  "description": "MCP server for Rove browser automation API — use from Claude, Cursor, VS Code",
+  "bin": {
+    "rove-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["mcp", "browser", "automation", "playwright", "a11y", "accessibility", "claude", "cursor", "vscode", "ai-agent"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/noncelogic/mcp.git"
+  },
+  "homepage": "https://roveapi.com",
+  "bugs": {
+    "url": "https://github.com/noncelogic/mcp/issues"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "tsx": "^4",
+    "@types/node": "^22"
+  }
+}
