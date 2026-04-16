@@ -11,17 +11,20 @@ export type McpTool = {
 export const TOOL_DEFS: McpTool[] = [
   {
     name: 'navigate',
-    description: 'Navigate to a URL. Creates a session automatically if none exists. Use stealth: true when visiting public sites to reduce bot detection. Use action_delay_ms to add polite jitter between actions.',
+    description: 'Navigate a browser to a URL and return the page title, final URL, and accessibility tree snapshot. Automatically creates a new browser session if none exists. Returns structured data ideal for LLM consumption — 77% fewer tokens than screenshots.',
     inputSchema: {
       type: 'object',
       properties: {
-        url: { type: 'string', description: 'Full URL to navigate to' },
-        session_id: { type: 'string', description: 'Reuse an existing session' },
-        stealth: { type: 'boolean', description: 'Enable stealth mode: realistic user agent, hidden webdriver flag. Default: false' },
+        url: { type: 'string', description: 'Full URL to navigate to (e.g. "https://example.com")' },
+        session_id: { type: 'string', description: 'Reuse an existing browser session. If omitted, a new session is created automatically.' },
+        stealth: { type: 'boolean', description: 'Enable stealth mode: sets a realistic user agent and hides the webdriver flag to reduce bot detection on public sites. Default: false.' },
         action_delay_ms: {
           type: 'object',
-          description: 'Random delay between actions (ms). E.g. {"min": 500, "max": 1500}',
-          properties: { min: { type: 'number' }, max: { type: 'number' } },
+          description: 'Add random delay between browser actions for polite scraping. Specify min and max milliseconds, e.g. {"min": 500, "max": 1500}.',
+          properties: {
+            min: { type: 'number', description: 'Minimum delay in milliseconds' },
+            max: { type: 'number', description: 'Maximum delay in milliseconds' },
+          },
         },
       },
       required: ['url'],
@@ -30,36 +33,72 @@ export const TOOL_DEFS: McpTool[] = [
   },
   {
     name: 'interact',
-    description: 'Perform click/fill style actions in active session.',
+    description: 'Perform a click or fill action on an element in the current browser session. Use "click" to click a button or link by CSS selector, or "fill" to type text into an input field.',
     inputSchema: {
       type: 'object',
-      properties: { session_id: { type: 'string' }, action: { type: 'string', enum: ['click', 'fill'] }, params: { type: 'object' } },
+      properties: {
+        session_id: { type: 'string', description: 'The browser session ID returned by navigate.' },
+        action: { type: 'string', enum: ['click', 'fill'], description: 'The interaction type: "click" to click an element, "fill" to type into an input.' },
+        params: {
+          type: 'object',
+          description: 'Action parameters. For click: {"selector": "button.submit"}. For fill: {"selector": "input[name=email]", "value": "user@example.com"}.',
+        },
+      },
       required: ['session_id', 'action']
     },
     mappedEndpoint: 'POST /v1/browser/action (click/fill)'
   },
   {
     name: 'extract_schema',
-    description: 'Reserved mapping for extraction path.',
-    inputSchema: { type: 'object', properties: { url: { type: 'string' }, schema: { type: 'object' } }, required: ['url', 'schema'] },
+    description: 'Extract structured data from a webpage using a JSON schema. Navigates to the URL, waits for the page to load, and extracts values matching the schema keys from the page content. Returns a JSON object with the extracted data.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL of the page to extract data from (e.g. "https://example.com/product")' },
+        schema: {
+          type: 'object',
+          description: 'A JSON object where keys are the field names to extract and values describe the expected data type. Example: {"price": "string", "title": "string", "rating": "number"}.',
+        },
+        wait_for_selector: { type: 'string', description: 'Optional CSS selector to wait for before extracting data, useful for dynamically loaded content.' },
+      },
+      required: ['url', 'schema'],
+    },
     mappedEndpoint: 'POST /v1/browser/extract'
   },
   {
     name: 'screenshot',
-    description: 'Take in-session or standalone screenshot. Explicit session_id is persisted as active session context.',
-    inputSchema: { type: 'object', properties: { session_id: { type: 'string' }, url: { type: 'string' } } },
+    description: 'Capture a screenshot of the current browser page. Can take an in-session screenshot (using session_id) or a standalone screenshot of any URL. Returns the screenshot URL and metadata.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'Browser session ID for in-session screenshot. If provided, captures the current page state.' },
+        url: { type: 'string', description: 'URL to screenshot. Used for standalone screenshots when no session_id is provided.' },
+      },
+    },
     mappedEndpoint: 'POST /v1/browser/action (screenshot) or POST /v1/browser/screenshot'
   },
   {
     name: 'get_a11y_tree',
-    description: 'Get accessibility tree snapshot for active session.',
-    inputSchema: { type: 'object', properties: { session_id: { type: 'string' } }, required: ['session_id'] },
+    description: 'Get the accessibility tree snapshot of the current page in the browser session. Returns a structured representation of all interactive elements, text content, and ARIA attributes — the core differentiator of Rove. Uses ~26K tokens vs ~114K for a screenshot (77% reduction).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'The browser session ID. The session must have navigated to a page first.' },
+      },
+      required: ['session_id'],
+    },
     mappedEndpoint: 'POST /v1/browser/action (get_a11y_tree)'
   },
   {
     name: 'close_session',
-    description: 'Close current session and clear MCP state only when closing the currently stored session.',
-    inputSchema: { type: 'object', properties: { session_id: { type: 'string' } }, required: ['session_id'] },
+    description: 'Close a browser session and release all associated resources (browser context, page, video recording). Returns a list of artifacts (screenshots, videos) captured during the session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'The browser session ID to close.' },
+      },
+      required: ['session_id'],
+    },
     mappedEndpoint: 'POST /v1/browser/action (close_session)'
   }
 ]
