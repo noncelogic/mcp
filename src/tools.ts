@@ -79,11 +79,13 @@ export const TOOL_DEFS: McpTool[] = [
   },
   {
     name: 'get_a11y_tree',
-    description: 'Get the accessibility tree snapshot of the current page in the browser session. Returns a structured representation of all interactive elements, text content, and ARIA attributes — the core differentiator of Rove. Uses ~26K tokens vs ~114K for a screenshot (77% reduction).',
+    description: 'Get the accessibility tree snapshot of the current page. Returns structured data 77% smaller than a screenshot. Use selector to scope to a specific element (recommended for large pages like Amazon/eBay to avoid huge responses).',
     inputSchema: {
       type: 'object',
       properties: {
         session_id: { type: 'string', description: 'The browser session ID. The session must have navigated to a page first.' },
+        selector: { type: 'string', description: 'CSS selector to scope the tree to a specific element (e.g. "#search-results", "main", ".product-grid"). Dramatically reduces output on complex pages.' },
+        max_chars: { type: 'number', description: 'Maximum characters to return. Tree is truncated at nearest line boundary. Useful for keeping responses within token limits.' },
       },
       required: ['session_id'],
     },
@@ -290,7 +292,10 @@ export async function runTool(
 
     case 'get_a11y_tree': {
       const sessionId = resolveSessionId(input, sessions, clientId)
-      const result = await rest.runAction({ session_id: sessionId, action: 'get_a11y_tree', params: {} })
+      const params: Record<string, unknown> = {}
+      if (input.selector) params.selector = input.selector
+      if (input.max_chars) params.max_chars = input.max_chars
+      const result = await rest.runAction({ session_id: sessionId, action: 'get_a11y_tree', params })
       return { session_id: sessionId, ...result }
     }
 
