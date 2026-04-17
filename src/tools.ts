@@ -2,7 +2,7 @@ import type { RestClient } from './rest-client.js'
 import type { SessionStore } from './session-store.js'
 
 export type McpTool = {
-  name: 'navigate' | 'interact' | 'extract_schema' | 'screenshot' | 'get_a11y_tree' | 'close_session'
+  name: 'navigate' | 'interact' | 'extract_schema' | 'screenshot' | 'get_a11y_tree' | 'close_session' | 'authenticate' | 'account_info' | 'buy_credits'
   description: string
   inputSchema: Record<string, unknown>
   mappedEndpoint: string
@@ -100,6 +100,36 @@ export const TOOL_DEFS: McpTool[] = [
       required: ['session_id'],
     },
     mappedEndpoint: 'POST /v1/browser/action (close_session)'
+  },
+  {
+    name: 'authenticate',
+    description: 'Authenticate this MCP session by email. Sends a magic link to your inbox — click it to activate your session and get an API key. Required before using browser tools if no ROVE_API_KEY is set.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        email: { type: 'string', description: 'Your email address to receive the magic link.' },
+      },
+      required: ['email'],
+    },
+    mappedEndpoint: 'POST /api/public/auth/device/start'
+  },
+  {
+    name: 'account_info',
+    description: 'Check your Rove account status including credit balance, plan tier, and API key info.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+    mappedEndpoint: 'GET /v1/account/usage'
+  },
+  {
+    name: 'buy_credits',
+    description: 'Get pricing information and purchase links for Rove credits. Returns Founder Pack tiers and top-up bundles with direct links to the pricing page.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+    mappedEndpoint: 'GET /pricing'
   }
 ]
 
@@ -198,6 +228,53 @@ export async function runTool(
       if (cleared) sessions.clear(clientId)
 
       return { session_id: sessionId, ...result, cleanup: { session_store_cleared: cleared } }
+    }
+
+    case 'authenticate': {
+      const email = input.email
+      if (typeof email !== 'string' || !email.includes('@')) throw new Error('A valid email address is required.')
+
+      const response = await fetch(`${rest.baseUrl}/api/public/auth/device/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+
+      if (!response.ok) {
+        const err = await response.text()
+        throw new Error(`Failed to start authentication: ${err}`)
+      }
+
+      return {
+        message: `Magic link sent to ${email}. Check your inbox and click the link to activate your session.`,
+        next_step: 'Once you click the link, you will receive an API key. Set it as ROVE_API_KEY and reconnect the MCP server.',
+      }
+    }
+
+    case 'account_info': {
+      const response = await fetch(`${rest.baseUrl}/v1/account/usage`, {
+        headers: { 'Authorization': `Bearer ${rest.apiKey}` },
+      })
+      if (!response.ok) throw new Error(`Failed to fetch account info (${response.status})`)
+      const data = await response.json()
+      return { ...data as Record<string, unknown>, buy_credits: 'Use the buy_credits tool to see pricing and purchase links.' }
+    }
+
+    case 'buy_credits': {
+      return {
+        pricing: 'https://roveapi.com/pricing',
+        packs: [
+          { name: 'Solo', price: '$99', credits: '5,000' },
+          { name: 'Builder', price: '$199', credits: '10,000', best_value: true },
+          { name: 'Agency', price: '$349', credits: '25,000' },
+        ],
+        top_ups: [
+          { credits: '1,000', price: '$12' },
+          { credits: '5,000', price: '$49' },
+          { credits: '10,000', price: '$89' },
+        ],
+        note: 'Visit roveapi.com/pricing to purchase. Credits never expire. 1 credit = 1 action.',
+      }
     }
   }
 }

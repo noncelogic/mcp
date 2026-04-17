@@ -35,6 +35,8 @@ export type ExtractResponse = {
 }
 
 export type RestClient = {
+  readonly baseUrl: string
+  readonly apiKey: string
   createSession(input?: Record<string, unknown>): Promise<CreateSessionResponse>
   runAction(input: { session_id: string; action: string; params?: Record<string, unknown> }): Promise<ActionEnvelope>
   standaloneScreenshot(input: { url: string }): Promise<StandaloneScreenshotResponse>
@@ -66,6 +68,8 @@ export function createRestClient(apiBaseUrl: string, apiKey: string): RestClient
   }
 
   return {
+    baseUrl: apiBaseUrl,
+    apiKey,
     createSession: (input) => call<CreateSessionResponse>('/v1/browser/session', { method: 'POST', body: JSON.stringify(input ?? {}) }),
     runAction: (input) => call<ActionEnvelope>('/v1/browser/action', { method: 'POST', body: JSON.stringify(input) }),
     standaloneScreenshot: (input) =>
