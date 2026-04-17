@@ -2,7 +2,7 @@ import type { RestClient } from './rest-client.js'
 import type { SessionStore } from './session-store.js'
 
 export type McpTool = {
-  name: 'navigate' | 'interact' | 'extract_schema' | 'screenshot' | 'get_a11y_tree' | 'close_session' | 'authenticate' | 'account_info' | 'buy_credits'
+  name: 'navigate' | 'interact' | 'extract_schema' | 'screenshot' | 'get_a11y_tree' | 'close_session' | 'click' | 'fill' | 'get_text' | 'scroll' | 'evaluate' | 'list_sessions' | 'authenticate' | 'account_info' | 'buy_credits'
   description: string
   inputSchema: Record<string, unknown>
   mappedEndpoint: string
@@ -88,6 +88,82 @@ export const TOOL_DEFS: McpTool[] = [
       required: ['session_id'],
     },
     mappedEndpoint: 'POST /v1/browser/action (get_a11y_tree)'
+  },
+  {
+    name: 'click',
+    description: 'Click an element on the page by CSS selector. Use this to interact with buttons, links, checkboxes, and other clickable elements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'The browser session ID.' },
+        selector: { type: 'string', description: 'CSS selector of the element to click (e.g. "button.submit", "#login", "a[href=\'/pricing\']").' },
+      },
+      required: ['session_id', 'selector'],
+    },
+    mappedEndpoint: 'POST /v1/browser/action (click)'
+  },
+  {
+    name: 'fill',
+    description: 'Type text into a form field. Clears any existing value first, then types the new value.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'The browser session ID.' },
+        selector: { type: 'string', description: 'CSS selector of the input element (e.g. "input[name=email]", "#search-box").' },
+        value: { type: 'string', description: 'The text to type into the field.' },
+      },
+      required: ['session_id', 'selector', 'value'],
+    },
+    mappedEndpoint: 'POST /v1/browser/action (fill)'
+  },
+  {
+    name: 'get_text',
+    description: 'Extract the text content of an element on the page. Useful for reading specific values like prices, headings, or status messages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'The browser session ID.' },
+        selector: { type: 'string', description: 'CSS selector of the element to read text from.' },
+      },
+      required: ['session_id', 'selector'],
+    },
+    mappedEndpoint: 'POST /v1/browser/action (get_text)'
+  },
+  {
+    name: 'scroll',
+    description: 'Scroll the page in a given direction. Useful for loading lazy content or reaching elements below the fold.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'The browser session ID.' },
+        direction: { type: 'string', enum: ['up', 'down', 'left', 'right'], description: 'Scroll direction.' },
+        amount: { type: 'number', description: 'Pixels to scroll. Default: 500.' },
+      },
+      required: ['session_id', 'direction'],
+    },
+    mappedEndpoint: 'POST /v1/browser/action (scroll)'
+  },
+  {
+    name: 'evaluate',
+    description: 'Execute arbitrary JavaScript in the browser page context. Returns the result of the expression. Use for advanced DOM queries, custom extraction logic, or page manipulation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'The browser session ID.' },
+        script: { type: 'string', description: 'JavaScript code to execute in the page context. The return value is serialized as JSON.' },
+      },
+      required: ['session_id', 'script'],
+    },
+    mappedEndpoint: 'POST /v1/browser/action (evaluate)'
+  },
+  {
+    name: 'list_sessions',
+    description: 'Show the current active browser session for this MCP connection, including its URL, page title, and expiry.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+    mappedEndpoint: 'GET (local state)'
   },
   {
     name: 'close_session',
@@ -216,6 +292,53 @@ export async function runTool(
       const sessionId = resolveSessionId(input, sessions, clientId)
       const result = await rest.runAction({ session_id: sessionId, action: 'get_a11y_tree', params: {} })
       return { session_id: sessionId, ...result }
+    }
+
+    case 'click': {
+      const sessionId = resolveSessionId(input, sessions, clientId)
+      const selector = input.selector
+      if (typeof selector !== 'string' || !selector) throw new Error('selector is required')
+      const result = await rest.runAction({ session_id: sessionId, action: 'click', params: { selector } })
+      return { session_id: sessionId, ...result }
+    }
+
+    case 'fill': {
+      const sessionId = resolveSessionId(input, sessions, clientId)
+      const selector = input.selector
+      const value = input.value
+      if (typeof selector !== 'string' || !selector) throw new Error('selector is required')
+      if (typeof value !== 'string') throw new Error('value is required')
+      const result = await rest.runAction({ session_id: sessionId, action: 'fill', params: { selector, value } })
+      return { session_id: sessionId, ...result }
+    }
+
+    case 'get_text': {
+      const sessionId = resolveSessionId(input, sessions, clientId)
+      const selector = input.selector
+      if (typeof selector !== 'string' || !selector) throw new Error('selector is required')
+      const result = await rest.runAction({ session_id: sessionId, action: 'get_text', params: { selector } })
+      return { session_id: sessionId, ...result }
+    }
+
+    case 'scroll': {
+      const sessionId = resolveSessionId(input, sessions, clientId)
+      const direction = input.direction
+      if (typeof direction !== 'string') throw new Error('direction is required')
+      const result = await rest.runAction({ session_id: sessionId, action: 'scroll', params: { direction, amount: input.amount ?? 500 } })
+      return { session_id: sessionId, ...result }
+    }
+
+    case 'evaluate': {
+      const sessionId = resolveSessionId(input, sessions, clientId)
+      const script = input.script
+      if (typeof script !== 'string' || !script) throw new Error('script is required')
+      const result = await rest.runAction({ session_id: sessionId, action: 'evaluate', params: { script } })
+      return { session_id: sessionId, ...result }
+    }
+
+    case 'list_sessions': {
+      const activeSessionId = sessions.get(clientId)
+      return { active_session_id: activeSessionId ?? null }
     }
 
     case 'close_session': {
