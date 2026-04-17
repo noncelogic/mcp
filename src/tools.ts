@@ -234,20 +234,51 @@ export async function runTool(
       const email = input.email
       if (typeof email !== 'string' || !email.includes('@')) throw new Error('A valid email address is required.')
 
-      const response = await fetch(`${rest.baseUrl}/api/public/auth/device/start`, {
+      const startResponse = await fetch(`${rest.baseUrl}/api/public/auth/device/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       })
 
-      if (!response.ok) {
-        const err = await response.text()
+      if (!startResponse.ok) {
+        const err = await startResponse.text()
         throw new Error(`Failed to start authentication: ${err}`)
       }
 
+      const { request_code } = await startResponse.json() as { request_code: string }
+
+      // Poll for approval (user clicks magic link in email)
+      const pollInterval = 3000
+      const maxAttempts = 60 // 3 minutes
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise(resolve => setTimeout(resolve, pollInterval))
+
+        const pollResponse = await fetch(`${rest.baseUrl}/api/public/auth/device/poll`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ request_code }),
+        })
+
+        if (!pollResponse.ok) continue
+
+        const pollData = await pollResponse.json() as { status: string; api_key?: string }
+
+        if (pollData.status === 'approved' && pollData.api_key) {
+          return {
+            authenticated: true,
+            api_key: pollData.api_key,
+            message: `Authenticated as ${email}. To persist this key, restart the MCP server with ROVE_API_KEY=${pollData.api_key} in your environment.`,
+          }
+        }
+
+        if (pollData.status === 'expired' || pollData.status === 'rejected') {
+          throw new Error(`Authentication ${pollData.status}. Please try again.`)
+        }
+      }
+
       return {
-        message: `Magic link sent to ${email}. Check your inbox and click the link to activate your session.`,
-        next_step: 'Once you click the link, you will receive an API key. Set it as ROVE_API_KEY and reconnect the MCP server.',
+        authenticated: false,
+        message: `Magic link sent to ${email} but timed out waiting for approval. Check your inbox and click the link, then try again.`,
       }
     }
 
