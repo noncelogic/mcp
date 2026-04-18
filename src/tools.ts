@@ -79,13 +79,16 @@ export const TOOL_DEFS: McpTool[] = [
   },
   {
     name: 'get_a11y_tree',
-    description: 'Get the accessibility tree snapshot of the current page. Returns structured data 77% smaller than a screenshot. Use selector to scope to a specific element (recommended for large pages like Amazon/eBay to avoid huge responses).',
+    description: 'Get the accessibility tree snapshot of the current page. Returns structured data 77% smaller than a screenshot. Auto-scopes to the main content area on large pages (50K+ chars). Use selector to manually scope to a specific element.',
     inputSchema: {
       type: 'object',
       properties: {
         session_id: { type: 'string', description: 'The browser session ID. The session must have navigated to a page first.' },
-        selector: { type: 'string', description: 'CSS selector to scope the tree to a specific element (e.g. "#search-results", "main", ".product-grid"). Dramatically reduces output on complex pages.' },
-        max_chars: { type: 'number', description: 'Maximum characters to return. Tree is truncated at nearest line boundary. Useful for keeping responses within token limits.' },
+        selector: { type: 'string', description: 'CSS selector to scope the tree to a specific element (e.g. "#search-results", "main"). If omitted on large pages, auto-scopes to the main landmark.' },
+        max_chars: { type: 'number', description: 'Maximum characters to return. Truncates at nearest line boundary.' },
+        max_depth: { type: 'number', description: 'Maximum tree depth. Limits nesting to get a structural overview without deep details.' },
+        visible_only: { type: 'boolean', description: 'Only include visible elements. Skips hidden menus, modals, and offscreen content.' },
+        exclude_selectors: { type: 'array', items: { type: 'string' }, description: 'CSS selectors to exclude from the tree (e.g. ["nav", "footer", ".ad-slot"]). Elements are hidden before snapshotting.' },
       },
       required: ['session_id'],
     },
@@ -295,6 +298,9 @@ export async function runTool(
       const params: Record<string, unknown> = {}
       if (input.selector) params.selector = input.selector
       if (input.max_chars) params.max_chars = input.max_chars
+      if (input.max_depth) params.max_depth = input.max_depth
+      if (input.visible_only) params.visible_only = input.visible_only
+      if (input.exclude_selectors) params.exclude_selectors = input.exclude_selectors
       const result = await rest.runAction({ session_id: sessionId, action: 'get_a11y_tree', params })
       return { session_id: sessionId, ...result }
     }
