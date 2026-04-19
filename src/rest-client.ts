@@ -1,8 +1,4 @@
-export type CreateSessionResponse = {
-  session_id: string
-  connection_token: string
-  expires_at: string
-}
+import { BrowserClient } from '@roveapi/browser'
 
 export type ActionEnvelope = {
   success: boolean
@@ -10,72 +6,33 @@ export type ActionEnvelope = {
   duration_ms?: number
 }
 
-export type StandaloneScreenshotResponse = {
-  url: string
-  expires_at: string
-  width_px?: number
-  height_px?: number
-  source_url?: string
-  artifact_id?: string
-}
-
-export type ArtifactsResponse = {
-  session_id: string
-  artifacts: Array<{
-    type: string
-    url: string
-    expires_at: string
-    width_px?: number
-    height_px?: number
-  }>
-}
-
-export type ExtractResponse = {
-  data: Record<string, unknown>
-}
-
 export type RestClient = {
   readonly baseUrl: string
   readonly apiKey: string
-  createSession(input?: Record<string, unknown>): Promise<CreateSessionResponse>
+  readonly browser: BrowserClient
+  createSession(input?: Record<string, unknown>): Promise<{ session_id: string }>
   runAction(input: { session_id: string; action: string; params?: Record<string, unknown> }): Promise<ActionEnvelope>
-  standaloneScreenshot(input: { url: string }): Promise<StandaloneScreenshotResponse>
-  extract(input: { url: string; schema: Record<string, string>; wait_for_selector?: string }): Promise<ExtractResponse>
-  getArtifacts(sessionId: string): Promise<ArtifactsResponse>
-}
-
-async function parseJson<T>(response: Response): Promise<T> {
-  return (await response.json()) as T
+  standaloneScreenshot(input: { url: string }): Promise<Record<string, unknown>>
+  extract(input: { url: string; schema: Record<string, string>; wait_for_selector?: string }): Promise<{ data: Record<string, unknown> }>
+  getArtifacts(sessionId: string): Promise<{ session_id: string; artifacts: Array<Record<string, unknown>> }>
 }
 
 export function createRestClient(apiBaseUrl: string, apiKey: string): RestClient {
-  async function call<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${apiBaseUrl}${path}`, {
-      ...init,
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${apiKey}`,
-        ...(init?.headers ?? {})
-      }
-    })
-
-    const body = await parseJson<Record<string, unknown>>(response).catch(() => ({}))
-    if (!response.ok) {
-      throw new Error(`API ${path} failed (${response.status}): ${JSON.stringify(body)}`)
-    }
-
-    return body as T
-  }
+  const browser = new BrowserClient({ apiKey, baseUrl: apiBaseUrl })
 
   return {
     baseUrl: apiBaseUrl,
     apiKey,
-    createSession: (input) => call<CreateSessionResponse>('/v1/browser/session', { method: 'POST', body: JSON.stringify(input ?? {}) }),
-    runAction: (input) => call<ActionEnvelope>('/v1/browser/action', { method: 'POST', body: JSON.stringify(input) }),
+    browser,
+    createSession: (input) =>
+      browser.request('/v1/browser/session', { method: 'POST', body: input ?? {} }),
+    runAction: (input) =>
+      browser.request('/v1/browser/action', { method: 'POST', body: input }),
     standaloneScreenshot: (input) =>
-      call<StandaloneScreenshotResponse>('/v1/browser/screenshot', { method: 'POST', body: JSON.stringify(input) }),
+      browser.request('/v1/browser/screenshot', { method: 'POST', body: input }),
     extract: (input) =>
-      call<ExtractResponse>('/v1/browser/extract', { method: 'POST', body: JSON.stringify(input) }),
-    getArtifacts: (sessionId) => call<ArtifactsResponse>(`/v1/browser/artifacts/${sessionId}`, { method: 'GET' })
+      browser.request('/v1/browser/extract', { method: 'POST', body: input }),
+    getArtifacts: (sessionId) =>
+      browser.request(`/v1/browser/artifacts/${sessionId}`, { method: 'GET' }),
   }
 }
