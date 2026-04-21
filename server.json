@@ -6,12 +6,12 @@
     "url": "https://github.com/noncelogic/mcp",
     "source": "github"
   },
-  "version": "1.9.0",
+  "version": "1.9.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@roveapi/mcp",
-      "version": "1.9.0",
+      "version": "1.9.1",
       "transport": {
         "type": "stdio"
       },

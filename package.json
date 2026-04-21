@@ -1,6 +1,6 @@
 {
   "name": "@roveapi/mcp",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "mcpName": "io.github.noncelogic/mcp",
   "description": "MCP server for Rove browser automation API — use from Claude, Cursor, VS Code",
   "bin": {
