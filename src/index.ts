@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -7,13 +9,17 @@ import { createRestClient } from './rest-client.js'
 import { SessionStore } from './session-store.js'
 import { TOOL_DEFS, runTool } from './tools.js'
 
+const pkg = JSON.parse(
+  readFileSync(join(__dirname, '..', 'package.json'), 'utf8'),
+) as { version: string }
+
 function createMcpServer(env: Record<string, string | undefined> = {}) {
   const config = loadConfig(env)
   const rest = createRestClient(config.apiBaseUrl, config.apiKey)
   const sessions = new SessionStore()
 
   const server = new Server(
-    { name: 'rove-browser', version: '1.1.5' },
+    { name: 'rove-browser', version: pkg.version },
     { capabilities: { tools: {} } },
   )
 

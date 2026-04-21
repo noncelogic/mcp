@@ -60,6 +60,40 @@ test('close_session only clears when closing currently stored session', async ()
   assert.equal(sessions.get('client-a'), undefined)
 })
 
+test('evaluate tool sends expression param (not script) to match API contract', async () => {
+  const sessions = new SessionStore()
+  sessions.set('client-a', 'sess_active')
+  const calls: Array<{ action: string; params: Record<string, unknown> }> = []
+
+  const rest = {
+    createSession: async () => ({ session_id: 'sess_new' }),
+    runAction: async (input: { session_id: string; action: string; params: Record<string, unknown> }) => {
+      calls.push({ action: input.action, params: input.params })
+      return { success: true, result: { value: 42, type: 'number' } }
+    },
+    standaloneScreenshot: async () => ({ url: 'https://x', expires_at: new Date().toISOString() }),
+    getArtifacts: async () => ({ session_id: 's', artifacts: [] }),
+  }
+
+  await runTool('evaluate', { expression: '1+1' }, { rest, sessions, clientId: 'client-a' })
+  assert.equal(calls[0]?.action, 'evaluate')
+  assert.equal(calls[0]?.params.expression, '1+1')
+  assert.equal(calls[0]?.params.script, undefined)
+})
+
+test('tool surface includes all 15 tools', () => {
+  const names = TOOL_DEFS.map((t) => t.name)
+  const expected = [
+    'navigate', 'interact', 'extract_schema', 'screenshot', 'get_a11y_tree',
+    'close_session', 'click', 'fill', 'get_text', 'scroll', 'evaluate',
+    'list_sessions', 'authenticate', 'account_info', 'buy_credits',
+  ]
+  for (const name of expected) {
+    assert.ok(names.includes(name as any), `missing tool: ${name}`)
+  }
+  assert.equal(TOOL_DEFS.length, expected.length)
+})
+
 test('llms hooks generate non-empty outputs', () => {
   const llms = buildLlmsTxt()
   const full = buildLlmsFullTxt()

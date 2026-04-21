@@ -17,6 +17,8 @@ export const TOOL_DEFS: McpTool[] = [
       properties: {
         url: { type: 'string', description: 'Full URL to navigate to (e.g. "https://example.com")' },
         session_id: { type: 'string', description: 'Reuse an existing browser session. If omitted, a new session is created automatically.' },
+        wait_until: { type: 'string', enum: ['load', 'domcontentloaded', 'networkidle'], description: 'Page lifecycle event to wait for. Default: "networkidle".' },
+        timeout_ms: { type: 'number', description: 'Navigation timeout in milliseconds. Default: 30000.' },
         stealth: { type: 'boolean', description: 'Enable stealth mode: sets a realistic user agent and hides the webdriver flag to reduce bot detection on public sites. Default: false.' },
         action_delay_ms: {
           type: 'object',
@@ -73,6 +75,9 @@ export const TOOL_DEFS: McpTool[] = [
       properties: {
         session_id: { type: 'string', description: 'Browser session ID for in-session screenshot. If provided, captures the current page state.' },
         url: { type: 'string', description: 'URL to screenshot. Used for standalone screenshots when no session_id is provided.' },
+        selector: { type: 'string', description: 'CSS selector to screenshot a specific element instead of the page. In-session mode only.' },
+        full_page: { type: 'boolean', description: 'Capture the full scrollable page, not just the viewport. In-session mode only. Default: false.' },
+        format: { type: 'string', enum: ['png', 'jpeg'], description: 'Image format. In-session mode only. Default: "png".' },
       },
     },
     mappedEndpoint: 'POST /v1/browser/action (screenshot) or POST /v1/browser/screenshot'
@@ -96,28 +101,34 @@ export const TOOL_DEFS: McpTool[] = [
   },
   {
     name: 'click',
-    description: 'Click an element on the page by CSS selector. Use this to interact with buttons, links, checkboxes, and other clickable elements.',
+    description: 'Click an element on the page by CSS selector or accessible label. Use this to interact with buttons, links, checkboxes, and other clickable elements.',
     inputSchema: {
       type: 'object',
       properties: {
         session_id: { type: 'string', description: 'The browser session ID.' },
-        selector: { type: 'string', description: 'CSS selector of the element to click (e.g. "button.submit", "#login", "a[href=\'/pricing\']").' },
+        selector: { type: 'string', description: 'CSS selector of the element to click (e.g. "button.submit", "#login", "a[href=\'/pricing\']"). Either selector or label is required.' },
+        label: { type: 'string', description: 'Accessible name or visible text to click by (e.g. "Sign in", "Submit"). Alternative to selector; matches buttons, links, labels, and text.' },
+        button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'Mouse button to click with. Default: "left".' },
+        click_count: { type: 'number', description: 'Number of clicks (e.g. 2 for double-click). Default: 1.' },
+        wait_after_ms: { type: 'number', description: 'Milliseconds to wait after clicking before returning. Useful for pages that update asynchronously.' },
       },
-      required: ['session_id', 'selector'],
+      required: ['session_id'],
     },
     mappedEndpoint: 'POST /v1/browser/action (click)'
   },
   {
     name: 'fill',
-    description: 'Type text into a form field. Clears any existing value first, then types the new value.',
+    description: 'Type text into a form field. By default clears any existing value first, then types the new value.',
     inputSchema: {
       type: 'object',
       properties: {
         session_id: { type: 'string', description: 'The browser session ID.' },
-        selector: { type: 'string', description: 'CSS selector of the input element (e.g. "input[name=email]", "#search-box").' },
+        selector: { type: 'string', description: 'CSS selector of the input element (e.g. "input[name=email]", "#search-box"). Either selector or label is required.' },
+        label: { type: 'string', description: 'Accessible label of the input (e.g. "Email address"). Alternative to selector.' },
         value: { type: 'string', description: 'The text to type into the field.' },
+        clear_first: { type: 'boolean', description: 'Clear the existing value before typing. Default: true.' },
       },
-      required: ['session_id', 'selector', 'value'],
+      required: ['session_id', 'value'],
     },
     mappedEndpoint: 'POST /v1/browser/action (fill)'
   },
@@ -129,6 +140,7 @@ export const TOOL_DEFS: McpTool[] = [
       properties: {
         session_id: { type: 'string', description: 'The browser session ID.' },
         selector: { type: 'string', description: 'CSS selector of the element to read text from.' },
+        trim: { type: 'boolean', description: 'Trim leading/trailing whitespace from the extracted text. Default: true.' },
       },
       required: ['session_id', 'selector'],
     },
@@ -136,13 +148,14 @@ export const TOOL_DEFS: McpTool[] = [
   },
   {
     name: 'scroll',
-    description: 'Scroll the page in a given direction. Useful for loading lazy content or reaching elements below the fold.',
+    description: 'Scroll the page in a given direction, or scroll a specific scrollable element. Useful for loading lazy content or reaching elements below the fold.',
     inputSchema: {
       type: 'object',
       properties: {
         session_id: { type: 'string', description: 'The browser session ID.' },
         direction: { type: 'string', enum: ['up', 'down', 'left', 'right'], description: 'Scroll direction.' },
         amount: { type: 'number', description: 'Pixels to scroll. Default: 500.' },
+        selector: { type: 'string', description: 'CSS selector of a scrollable element. If omitted, the window is scrolled.' },
       },
       required: ['session_id', 'direction'],
     },
@@ -155,9 +168,9 @@ export const TOOL_DEFS: McpTool[] = [
       type: 'object',
       properties: {
         session_id: { type: 'string', description: 'The browser session ID.' },
-        script: { type: 'string', description: 'JavaScript code to execute in the page context. The return value is serialized as JSON.' },
+        expression: { type: 'string', description: 'JavaScript expression to evaluate in the page context. The return value is serialized as JSON.' },
       },
-      required: ['session_id', 'script'],
+      required: ['session_id', 'expression'],
     },
     mappedEndpoint: 'POST /v1/browser/action (evaluate)'
   },
@@ -249,7 +262,11 @@ export async function runTool(
       }
       sessions.set(clientId, sessionId)
 
-      const result = await rest.runAction({ session_id: sessionId, action: 'navigate', params: { url } })
+      const params: Record<string, unknown> = { url }
+      if (typeof input.wait_until === 'string') params.wait_until = input.wait_until
+      if (typeof input.timeout_ms === 'number') params.timeout_ms = input.timeout_ms
+
+      const result = await rest.runAction({ session_id: sessionId, action: 'navigate', params })
       return { session_id: sessionId, ...result }
     }
 
@@ -284,7 +301,11 @@ export async function runTool(
 
       if (sessionId) {
         sessions.set(clientId, sessionId)
-        const result = await rest.runAction({ session_id: sessionId, action: 'screenshot', params: {} })
+        const params: Record<string, unknown> = {}
+        if (typeof input.selector === 'string') params.selector = input.selector
+        if (typeof input.full_page === 'boolean') params.full_page = input.full_page
+        if (typeof input.format === 'string') params.format = input.format
+        const result = await rest.runAction({ session_id: sessionId, action: 'screenshot', params })
         return { session_id: sessionId, ...result }
       }
 
@@ -307,19 +328,35 @@ export async function runTool(
 
     case 'click': {
       const sessionId = resolveSessionId(input, sessions, clientId)
-      const selector = input.selector
-      if (typeof selector !== 'string' || !selector) throw new Error('selector is required')
-      const result = await rest.runAction({ session_id: sessionId, action: 'click', params: { selector } })
+      const selector = typeof input.selector === 'string' ? input.selector : undefined
+      const label = typeof input.label === 'string' ? input.label : undefined
+      if (!selector && !label) throw new Error('selector or label is required')
+
+      const params: Record<string, unknown> = {}
+      if (selector) params.selector = selector
+      if (label) params.label = label
+      if (typeof input.button === 'string') params.button = input.button
+      if (typeof input.click_count === 'number') params.click_count = input.click_count
+      if (typeof input.wait_after_ms === 'number') params.wait_after_ms = input.wait_after_ms
+
+      const result = await rest.runAction({ session_id: sessionId, action: 'click', params })
       return { session_id: sessionId, ...result }
     }
 
     case 'fill': {
       const sessionId = resolveSessionId(input, sessions, clientId)
-      const selector = input.selector
+      const selector = typeof input.selector === 'string' ? input.selector : undefined
+      const label = typeof input.label === 'string' ? input.label : undefined
       const value = input.value
-      if (typeof selector !== 'string' || !selector) throw new Error('selector is required')
+      if (!selector && !label) throw new Error('selector or label is required')
       if (typeof value !== 'string') throw new Error('value is required')
-      const result = await rest.runAction({ session_id: sessionId, action: 'fill', params: { selector, value } })
+
+      const params: Record<string, unknown> = { value }
+      if (selector) params.selector = selector
+      if (label) params.label = label
+      if (typeof input.clear_first === 'boolean') params.clear_first = input.clear_first
+
+      const result = await rest.runAction({ session_id: sessionId, action: 'fill', params })
       return { session_id: sessionId, ...result }
     }
 
@@ -327,7 +364,11 @@ export async function runTool(
       const sessionId = resolveSessionId(input, sessions, clientId)
       const selector = input.selector
       if (typeof selector !== 'string' || !selector) throw new Error('selector is required')
-      const result = await rest.runAction({ session_id: sessionId, action: 'get_text', params: { selector } })
+
+      const params: Record<string, unknown> = { selector }
+      if (typeof input.trim === 'boolean') params.trim = input.trim
+
+      const result = await rest.runAction({ session_id: sessionId, action: 'get_text', params })
       return { session_id: sessionId, ...result }
     }
 
@@ -335,15 +376,19 @@ export async function runTool(
       const sessionId = resolveSessionId(input, sessions, clientId)
       const direction = input.direction
       if (typeof direction !== 'string') throw new Error('direction is required')
-      const result = await rest.runAction({ session_id: sessionId, action: 'scroll', params: { direction, amount: input.amount ?? 500 } })
+
+      const params: Record<string, unknown> = { direction, amount: input.amount ?? 500 }
+      if (typeof input.selector === 'string') params.selector = input.selector
+
+      const result = await rest.runAction({ session_id: sessionId, action: 'scroll', params })
       return { session_id: sessionId, ...result }
     }
 
     case 'evaluate': {
       const sessionId = resolveSessionId(input, sessions, clientId)
-      const script = input.script
-      if (typeof script !== 'string' || !script) throw new Error('script is required')
-      const result = await rest.runAction({ session_id: sessionId, action: 'evaluate', params: { script } })
+      const expression = input.expression
+      if (typeof expression !== 'string' || !expression) throw new Error('expression is required')
+      const result = await rest.runAction({ session_id: sessionId, action: 'evaluate', params: { expression } })
       return { session_id: sessionId, ...result }
     }
 
@@ -405,8 +450,8 @@ export async function runTool(
           }
         }
 
-        if (pollData.status === 'expired' || pollData.status === 'rejected') {
-          throw new Error(`Authentication ${pollData.status}. Please try again.`)
+        if (pollData.status === 'expired') {
+          throw new Error('Authentication expired. Please try again.')
         }
       }
 
